@@ -31,7 +31,8 @@
 #define STATUS_CYCLETIME 100      // cycletime for refresh analog and digital Statusvalues
 #define UI_SET_LED_CYCLETIME 1000 // cycletime for refresh UI status LEDs
 
-#define LIFT_EMERGENCY_MILLIS 500  // Time for wheels to be lifted in order to count as emergency. This is to filter uneven ground.
+#define TILT_EMERGENCY_MILLIS 5000  // Time for wheels to be lifted in order to count as emergency. This is to filter uneven ground.
+#define LIFT_EMERGENCY_MILLIS 200  // Time for wheels to be lifted in order to count as emergency. This is to filter uneven ground.
 #define BUTTON_EMERGENCY_MILLIS 20 // Time for button emergency to activate. This is to debounce the button if triggered on bumpy surfaces
 
 // Define to stream debugging messages via USB
@@ -85,6 +86,7 @@ unsigned long last_status_update_millis = 0;
 unsigned long last_heartbeat_millis = 0;
 unsigned long last_UILED_millis = 0;
 
+unsigned long tilt_emergency_started = 0;
 unsigned long lift_emergency_started = 0;
 unsigned long button_emergency_started = 0;
 
@@ -141,7 +143,9 @@ void updateEmergency() {
 
     uint8_t emergency_state = 0;
 
-    bool is_lifted = emergency1 || emergency2;
+    bool is_tilted = emergency1 || emergency2;
+    bool is_lifted = emergency1 && emergency2;
+
     bool stop_pressed = emergency3 || emergency4;
 
     if (is_lifted) {
@@ -165,6 +169,25 @@ void updateEmergency() {
     }
 
     if (lift_emergency_started > 0 && (millis() - lift_emergency_started) >= LIFT_EMERGENCY_MILLIS) {
+        // Emergency bit 2 (lift wheel 1)set?
+        if (emergency1)
+            emergency_state |= 0b01000;
+        // Emergency bit 1 (lift wheel 2)set?
+        if (emergency2)
+            emergency_state |= 0b10000;
+    }
+
+    if (is_tilted) {
+        // We just lifted, store the timestamp
+        if (tilt_emergency_started == 0) {
+            tilt_emergency_started = millis();
+        }
+    } else {
+        // Not lifted, reset the time
+        tilt_emergency_started = 0;
+    }
+
+    if (tilt_emergency_started > 0 && (millis() - tilt_emergency_started) >= TILT_EMERGENCY_MILLIS) {
         // Emergency bit 2 (lift wheel 1)set?
         if (emergency1)
             emergency_state |= 0b01000;
@@ -340,6 +363,7 @@ void setup() {
     emergency_latch = true;
     ROS_running = false;
 
+    tilt_emergency_started = 0;
     lift_emergency_started = 0;
     button_emergency_started = 0;
     // Initialize messages
